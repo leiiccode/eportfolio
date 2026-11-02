@@ -75,14 +75,9 @@ const SERVICES_DATA = [
   },
 ];
 
-const OWNER_EMAIL = 'leiiccode@gmail.com';
-const FORM_SUBMIT_ENDPOINT = import.meta.env.VITE_FORM_SUBMIT_ENDPOINT ?? 'https://formsubmit.co/ajax/leiiccode@gmail.com';
 const MAX_NAME_LENGTH = 80;
 const MAX_CONTACT_LENGTH = 255;
 const MAX_DETAILS_LENGTH = 1500;
-const SUBMIT_COOLDOWN_MS = 60000;
-const DUPLICATE_WINDOW_MS = 300000;
-const RATE_LIMIT_STORAGE_KEY = 'portfolio-contact-rate-limit';
 
 const stripHtml = (value = '') => {
   const withoutTags = value.replace(/<[^>]*>/g, '');
@@ -155,56 +150,6 @@ const validateForm = (formData) => {
   };
 };
 
-const getRateLimitState = () => {
-  if (typeof window === 'undefined') {
-    return { lastSubmitAt: 0, recentRequests: [] };
-  }
-
-  try {
-    const raw = window.sessionStorage.getItem(RATE_LIMIT_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : { lastSubmitAt: 0, recentRequests: [] };
-  } catch {
-    return { lastSubmitAt: 0, recentRequests: [] };
-  }
-};
-
-const persistRateLimitState = (state) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(RATE_LIMIT_STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // ignore storage quota failures and continue safely
-  }
-};
-
-const checkRateLimit = (payload) => {
-  const state = getRateLimitState();
-  const now = Date.now();
-  const normalizedPayload = `${payload.name.toLowerCase()}|${payload.contact.toLowerCase()}|${payload.details.toLowerCase()}`;
-
-  const recentRequests = (state.recentRequests || []).filter((item) => now - item.timestamp < DUPLICATE_WINDOW_MS);
-  const duplicate = recentRequests.some((item) => item.payload === normalizedPayload);
-
-  if (duplicate) {
-    return 'We already received a similar inquiry from you recently.';
-  }
-
-  if (state.lastSubmitAt && now - state.lastSubmitAt < SUBMIT_COOLDOWN_MS) {
-    return 'Please wait a moment before submitting another inquiry.';
-  }
-
-  if (recentRequests.length >= 5) {
-    return 'Too many inquiries have been submitted. Please try again later.';
-  }
-
-  recentRequests.push({ payload: normalizedPayload, timestamp: now });
-  persistRateLimitState({ lastSubmitAt: now, recentRequests });
-  return '';
-};
-
 const PROFILE_CONFIG = {
   name: 'Francis Pascua',
   age: 21,
@@ -236,38 +181,35 @@ export default function App() {
       return;
     }
 
-    const rateLimitError = checkRateLimit(validationResult);
-    if (rateLimitError) {
-      setFormError(rateLimitError);
-      setFormSubmitted(false);
-      return;
-    }
-
     setIsSending(true);
     setFormError('');
 
     try {
-      const response = await fetch(FORM_SUBMIT_ENDPOINT, {
+      const response = await fetch('/api/contact', {
         method: 'POST',
-        mode: 'cors',
-        credentials: 'omit',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify({
           name: validationResult.name,
           contact: validationResult.contact,
           details: validationResult.details,
-          _subject: `New Inquiry from ${validationResult.name}`,
-          _captcha: 'false',
-          _template: 'table',
         }),
       });
 
+      const isJson = response.headers.get('content-type')?.includes('application/json');
+      const result = isJson ? await response.json() : null;
+
+      if (response.status === 404 && !result) {
+        setFormError('Hindi makita ang contact service. Tiyaking kasama sa Vercel deployment ang API endpoint.');
+        return;
+      }
+
       if (!response.ok) {
-        throw new Error('Submission failed');
+        setFormSubmitted(false);
+        setFormError(result?.error || 'Hindi naipadala ang inquiry. Pakisubukan muli mamaya.');
+        return;
       }
 
       setFormSubmitted(true);
@@ -276,7 +218,7 @@ export default function App() {
     } catch (error) {
       console.error('Inquiry send error:', error);
       setFormSubmitted(false);
-      setFormError('We could not send your inquiry right now. Please try again in a moment or email ' + OWNER_EMAIL + '.');
+      setFormError('Hindi maabot ang contact service. Tiyaking online ang Vercel deployment at subukan muli.');
     } finally {
       setIsSending(false);
     }
@@ -464,6 +406,10 @@ export default function App() {
                   placeholder="Describe what you need (e.g., Website, PubMats, FB Management, Tech Support)..."
                 ></textarea>
               </div>
+
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                Privacy notice: Your name, contact details, and project information will be used to respond to your inquiry and sent to FormSubmit for email delivery. If duplicate detection is enabled, a hash of the inquiry is stored in Upstash Redis for 24 hours to identify identical repeat submissions. Please do not include sensitive personal information.
+              </p>
 
               <button
                 type="submit"

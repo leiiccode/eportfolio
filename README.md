@@ -1,16 +1,23 @@
-# React + Vite
+# Portfolio
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The contact form is handled by the Vercel Function in `api/contact.js`. It validates inquiries on the server and forwards them to FormSubmit without imposing a request-count or time-based limit. When Upstash Redis is configured, an identical inquiry is detected to help prevent repeated spam; duplicate detection is skipped if Redis is not configured or available so valid inquiries can still be sent.
 
-Currently, two official plugins are available:
+## Deployment
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The root `vercel.json` configures the Vite output and deploys `api/contact.js` as a Vercel Function. In Vercel, make sure the project's **Root Directory** is this repository, then redeploy the latest commit so `/api/contact` becomes available.
 
-## React Compiler
+Configure these environment variables for the deployment:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `CONTACT_EMAIL` (optional; defaults to `leiiccode@gmail.com`)
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
 
-## Expanding the ESLint configuration
+Ensure the recipient email is activated with FormSubmit. The API reports success only when FormSubmit confirms it accepted the inquiry; email delivery still depends on FormSubmit and the recipient's mail provider.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Create a Redis database through Upstash and copy its REST URL and token into the Vercel project settings to enable duplicate detection. An identical inquiry is recognized for 24 hours. Redis is optional and its unavailability does not block inquiry delivery.
+
+To run the Vercel Function locally, use the Vercel CLI (`vercel dev`) with the same environment variables configured.
+
+## Local frontend development
+
+Run `npm run dev` to start the Vite frontend. To test contact submissions locally, run the Vercel Function with `vercel dev`; duplicate detection additionally requires the optional Upstash credentials.
